@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AnalyserOS Scanner — Live Dashboard</title>
+<style>
+  :root {
+    --bg: #0b0f14; --panel: #121821; --panel-2: #171f2b; --border: #253141;
+    --text: #e7edf5; --muted: #8ea0b5; --safe: #2fbf71; --danger: #ff4d4f;
+    --accent: #4da3ff; --amber: #f5a623;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: radial-gradient(1200px 600px at 20% -10%, #16202c 0%, var(--bg) 60%);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    min-height: 100vh; display: flex; flex-direction: column; align-items: center;
+    padding: 24px 16px 60px;
+  }
+  header { text-align: center; margin-bottom: 20px; }
+  header h1 { font-size: 22px; margin: 0 0 4px; }
+  header p { margin: 0; color: var(--muted); font-size: 13px; }
+
+  .connect-bar {
+    display: flex; gap: 10px; align-items: center; margin: 18px 0 24px;
+    flex-wrap: wrap; justify-content: center;
+  }
+  button {
+    background: var(--accent); color: #06121f; border: none; padding: 10px 18px;
+    border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer;
+    transition: filter 0.15s ease;
+  }
+  button:hover { filter: brightness(1.1); }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
+  button.secondary { background: var(--panel-2); color: var(--text); border: 1px solid var(--border); }
+
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+    border-radius: 999px; font-size: 12px; font-weight: 600;
+    background: var(--panel-2); border: 1px solid var(--border); color: var(--muted);
+  }
+  .status-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .status-pill.connected { color: var(--safe); }
+  .status-pill.connected .dot { background: var(--safe); box-shadow: 0 0 8px var(--safe); }
+  .status-pill.error { color: var(--danger); }
+  .status-pill.error .dot { background: var(--danger); }
+
+  .grid {
+    width: 100%; max-width: 980px; display: grid;
+    grid-template-columns: 1.2fr 1fr; gap: 18px;
+  }
+  @media (max-width: 780px) { .grid { grid-template-columns: 1fr; } }
+
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); margin: 0 0 14px; }
+
+  .verdict {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 220px; border-radius: 12px; transition: background 0.3s ease;
+    background: var(--panel-2); border: 1px solid var(--border); padding: 16px;
+  }
+  .verdict.safe { background: rgba(47, 191, 113, 0.12); border-color: rgba(47,191,113,0.5); }
+  .verdict.danger { background: rgba(255, 77, 79, 0.14); border-color: rgba(255,77,79,0.6); animation: pulse 0.9s infinite; }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 rgba(255,77,79,0); }
+    50% { box-shadow: 0 0 26px rgba(255,77,79,0.55); }
+  }
+  .verdict .profile-tag {
+    font-size: 12px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted);
+    background: var(--panel); border: 1px solid var(--border); padding: 4px 12px; border-radius: 999px;
+    margin-bottom: 12px;
+  }
+  .verdict .label { font-size: 28px; font-weight: 800; }
+  .verdict.safe .label { color: var(--safe); }
+  .verdict.danger .label { color: var(--danger); }
+  .verdict .ppm-row { display: flex; gap: 24px; margin-top: 12px; }
+  .verdict .ppm-block { text-align: center; }
+  .verdict .ppm-block .val { font-size: 30px; font-weight: 700; }
+  .verdict .ppm-block .lbl { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; }
+  .verdict .threshold-note { font-size: 11px; color: var(--muted); margin-top: 10px; }
+  .verdict .updated { font-size: 12px; color: var(--muted); margin-top: 10px; }
+
+  .side-stack { display: flex; flex-direction: column; gap: 18px; }
+
+  .battery-row { display: flex; align-items: center; gap: 14px; }
+  .battery-shell {
+    width: 56px; height: 26px; border: 2px solid var(--border); border-radius: 5px; position: relative; flex-shrink: 0;
+  }
+  .battery-shell::after {
+    content: ""; position: absolute; right: -6px; top: 7px; width: 4px; height: 10px;
+    background: var(--border); border-radius: 0 2px 2px 0;
+  }
+  .battery-fill { height: 100%; background: var(--safe); border-radius: 2px; width: 0%; transition: width 0.4s ease, background 0.4s ease; }
+  .battery-pct { font-size: 22px; font-weight: 700; }
+  .charging-badge {
+    margin-left: 6px; font-size: 10px; padding: 2px 8px; border-radius: 999px;
+    background: rgba(245,166,35,0.18); color: var(--amber); border: 1px solid rgba(245,166,35,0.4);
+    display: none;
+  }
+  .charging-badge.show { display: inline-block; }
+
+  .counter-row { display: flex; gap: 14px; }
+  .counter-box {
+    flex: 1; background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px; text-align: center;
+  }
+  .counter-box .num { font-size: 24px; font-weight: 700; }
+  .counter-box.safe .num { color: var(--safe); }
+  .counter-box.danger .num { color: var(--danger); }
+  .counter-box .lbl { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; margin-top: 4px; }
+
+  table.log { width: 100%; border-collapse: collapse; font-size: 12px; }
+  table.log th, table.log td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--border); }
+  table.log th { color: var(--muted); font-weight: 600; text-transform: uppercase; font-size: 10px; letter-spacing: 0.5px; }
+  table.log td.danger-row { color: var(--danger); font-weight: 600; }
+  table.log td.safe-row { color: var(--safe); font-weight: 600; }
+  .log-wrap { max-height: 200px; overflow-y: auto; }
+
+  .hint { font-size: 12px; color: var(--muted); line-height: 1.5; margin-top: 10px; }
+  code { background: var(--panel-2); padding: 1px 6px; border-radius: 4px; font-size: 11px; border: 1px solid var(--border); }
+  footer { margin-top: 30px; font-size: 11px; color: var(--muted); text-align: center; max-width: 640px; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>AnalyserOS Scanner</h1>
+  <p>Web Bluetooth companion dashboard for the countdown-timer build</p>
+</header>
+
+<div class="connect-bar">
+  <button id="connectBtn">Connect to Scanner</button>
+  <button id="disconnectBtn" class="secondary" disabled>Disconnect</button>
+  <span id="statusPill" class="status-pill"><span class="dot"></span><span id="statusText">Not connected</span></span>
+</div>
+
+<div class="grid">
+  <div class="card">
+    <h2>Live Verdict</h2>
+    <div id="verdictBox" class="verdict">
+      <div class="profile-tag" id="profileTag">NO PROFILE YET</div>
+      <div class="label" id="verdictLabel">— NO DATA —</div>
+      <div class="ppm-row">
+        <div class="ppm-block"><div class="val" id="ppmCompVal">0.000</div><div class="lbl">Compensated PPM</div></div>
+        <div class="ppm-block"><div class="val" id="ppmRawVal">0.000</div><div class="lbl">Raw PPM</div></div>
+      </div>
+      <div class="threshold-note" id="thresholdNote">Threshold: -- ppm</div>
+      <div class="updated" id="updatedText">Waiting for first reading…</div>
+    </div>
+    <p class="hint">
+      Verdict mirrors the on-device threshold shown above. The device — not this dashboard — decides
+      SAFE/DANGER; this page only displays what it reports.
+    </p>
+  </div>
+
+  <div class="side-stack">
+    <div class="card">
+      <h2>Battery</h2>
+      <div class="battery-row">
+        <div class="battery-shell"><div class="battery-fill" id="battFill"></div></div>
+        <div class="battery-pct"><span id="battPct">--</span>%</div>
+        <span class="charging-badge" id="chargingBadge">CHARGING</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Lifetime Counters</h2>
+      <div class="counter-row">
+        <div class="counter-box safe"><div class="num" id="safeCount">0</div><div class="lbl">Safe</div></div>
+        <div class="counter-box danger"><div class="num" id="dangerCount">0</div><div class="lbl">Danger</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Reading Log <span style="font-weight:400; color:var(--muted); text-transform:none; letter-spacing:0;">(session only)</span></h2>
+      <div class="log-wrap">
+        <table class="log">
+          <thead><tr><th>Time</th><th>Profile</th><th>Comp.</th><th>Status</th><th>Batt</th></tr></thead>
+          <tbody id="logBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<footer>
+  Requires a Web Bluetooth-capable browser (desktop Chrome or Edge, or Android Chrome) served over
+  <code>https://</code> or <code>localhost</code>. Web Bluetooth is not supported in iOS Safari or inside
+  most sandboxed embedded viewers — open this file directly in a compatible desktop/Android browser.
+</footer>
+
+<script>
+/* =================================================================================
+ * BLE identifiers — MUST MATCH the constants in this build's main.cpp exactly:
+ *   BLE_DEVICE_NAME    = "AnalyserOS-Scanner"
+ *   BLE_SERVICE_UUID   = "344A423F-B6E7-4D75-BD2E-997E033F320C"
+ *   BLE_DATA_CHAR_UUID = "84FFB232-5937-4054-8277-8361C02CABE0"
+ * These are freshly generated for THIS firmware build and are intentionally
+ * different from any earlier revision's UUIDs.
+ * ================================================================================= */
+const SERVICE_UUID   = "344a423f-b6e7-4d75-bd2e-997e033f320c";
+const DATA_CHAR_UUID = "84ffb232-5937-4054-8277-8361c02cabe0";
+const DEVICE_NAME_PREFIX = "AnalyserOS-Scanner";
+
+let bleDevice = null;
+let bleServer = null;
+let bleChar = null;
+
+const connectBtn    = document.getElementById("connectBtn");
+const disconnectBtn = document.getElementById("disconnectBtn");
+const statusPill    = document.getElementById("statusPill");
+const statusText    = document.getElementById("statusText");
+
+const verdictBox     = document.getElementById("verdictBox");
+const profileTag     = document.getElementById("profileTag");
+const verdictLabel   = document.getElementById("verdictLabel");
+const ppmCompVal     = document.getElementById("ppmCompVal");
+const ppmRawVal      = document.getElementById("ppmRawVal");
+const thresholdNote  = document.getElementById("thresholdNote");
+const updatedText    = document.getElementById("updatedText");
+const battFill        = document.getElementById("battFill");
+const battPct        = document.getElementById("battPct");
+const chargingBadge  = document.getElementById("chargingBadge");
+const safeCountEl    = document.getElementById("safeCount");
+const dangerCountEl  = document.getElementById("dangerCount");
+const logBody        = document.getElementById("logBody");
+
+const MAX_LOG_ROWS = 30;
+
+function setStatus(state, msg) {
+  statusPill.classList.remove("connected", "error");
+  if (state === "connected") statusPill.classList.add("connected");
+  if (state === "error") statusPill.classList.add("error");
+  statusText.textContent = msg;
+}
+
+function setDisconnectedUI() {
+  connectBtn.disabled = false;
+  disconnectBtn.disabled = true;
+  setStatus("idle", "Not connected");
+}
+
+function setConnectedUI(deviceName) {
+  connectBtn.disabled = true;
+  disconnectBtn.disabled = false;
+  setStatus("connected", `Connected: ${deviceName || "Scanner"}`);
+}
+
+function updateBatteryUI(pct, charging) {
+  const clamped = Math.max(0, Math.min(100, pct));
+  battPct.textContent = clamped;
+  battFill.style.width = clamped + "%";
+  let color = "var(--safe)";
+  if (clamped < 20) color = "var(--danger)";
+  else if (clamped < 45) color = "var(--amber)";
+  battFill.style.background = color;
+  chargingBadge.classList.toggle("show", !!charging);
+}
+
+function updateVerdictUI(payload) {
+  const danger = String(payload.status).toUpperCase() === "DANGER";
+  verdictBox.classList.toggle("safe", !danger);
+  verdictBox.classList.toggle("danger", danger);
+  verdictLabel.textContent = danger ? "DANGER" : "SAFE";
+  ppmCompVal.textContent = Number(payload.ppm).toFixed(3);
+  ppmRawVal.textContent = Number(payload.raw).toFixed(3);
+  profileTag.textContent = payload.profile || "UNKNOWN PROFILE";
+  thresholdNote.textContent = `Threshold: ${Number(payload.thr).toFixed(2)} ppm`;
+  updatedText.textContent = "Last update: " + new Date().toLocaleTimeString();
+}
+
+function updateCounters(safeCnt, dangerCnt) {
+  safeCountEl.textContent = safeCnt;
+  dangerCountEl.textContent = dangerCnt;
+}
+
+function pushLogRow(payload) {
+  const tr = document.createElement("tr");
+  const danger = String(payload.status).toUpperCase() === "DANGER";
+  tr.innerHTML = `
+    <td>${new Date().toLocaleTimeString()}</td>
+    <td>${payload.profile}</td>
+    <td>${Number(payload.ppm).toFixed(3)}</td>
+    <td class="${danger ? "danger-row" : "safe-row"}">${payload.status}</td>
+    <td>${payload.batt}%</td>
+  `;
+  logBody.prepend(tr);
+  while (logBody.rows.length > MAX_LOG_ROWS) {
+    logBody.deleteRow(logBody.rows.length - 1);
+  }
+}
+
+/**
+ * Handles a notification/read from the device's data characteristic.
+ * Expected JSON payload from firmware:
+ *   {"ppm":0.08,"raw":0.05,"profile":"FISH","status":"SAFE","batt":76,
+ *    "chg":false,"thr":0.10,"safeCnt":12,"dangerCnt":3}
+ */
+let lastLoggedTimestamp = 0;
+function handleIncomingValue(dataView) {
+  try {
+    const text = new TextDecoder("utf-8").decode(dataView);
+    const payload = JSON.parse(text);
+
+    updateVerdictUI(payload);
+    updateBatteryUI(Number(payload.batt) || 0, !!payload.chg);
+    updateCounters(payload.safeCnt ?? 0, payload.dangerCnt ?? 0);
+
+    // Only add a log row on distinct heartbeats, throttled to avoid spamming
+    // the table from the 2s heartbeat when nothing has actually changed.
+    const now = Date.now();
+    if (now - lastLoggedTimestamp > 1900) {
+      lastLoggedTimestamp = now;
+      pushLogRow(payload);
+    }
+  } catch (err) {
+    console.error("Failed to parse sensor payload:", err, dataView);
+  }
+}
+
+function onCharacteristicValueChanged(event) {
+  handleIncomingValue(event.target.value);
+}
+
+function onDeviceDisconnected() {
+  setDisconnectedUI();
+  bleDevice = null;
+  bleServer = null;
+  bleChar = null;
+}
+
+async function connectToSensor() {
+  if (!navigator.bluetooth) {
+    setStatus("error", "Web Bluetooth not supported in this browser");
+    alert(
+      "This browser does not support Web Bluetooth.\n\n" +
+      "Use desktop Chrome/Edge or Android Chrome, served over https:// or localhost."
+    );
+    return;
+  }
+
+  try {
+    setStatus("idle", "Requesting device…");
+    bleDevice = await navigator.bluetooth.requestDevice({
+      filters: [
+        { namePrefix: DEVICE_NAME_PREFIX },
+        { services: [SERVICE_UUID] }
+      ],
+      optionalServices: [SERVICE_UUID]
+    });
+
+    bleDevice.addEventListener("gattserverdisconnected", onDeviceDisconnected);
+
+    setStatus("idle", "Connecting…");
+    bleServer = await bleDevice.gatt.connect();
+
+    const service = await bleServer.getPrimaryService(SERVICE_UUID);
+    bleChar = await service.getCharacteristic(DATA_CHAR_UUID);
+
+    try {
+      const initial = await bleChar.readValue();
+      handleIncomingValue(initial);
+    } catch (readErr) {
+      console.warn("Initial read failed (device may not support READ), continuing:", readErr);
+    }
+
+    await bleChar.startNotifications();
+    bleChar.addEventListener("characteristicvaluechanged", onCharacteristicValueChanged);
+
+    setConnectedUI(bleDevice.name);
+  } catch (err) {
+    console.error(err);
+    setStatus("error", "Connection failed: " + err.message);
+    setDisconnectedUI();
+  }
+}
+
+async function disconnectFromSensor() {
+  if (bleChar) {
+    try {
+      await bleChar.stopNotifications();
+      bleChar.removeEventListener("characteristicvaluechanged", onCharacteristicValueChanged);
+    } catch (e) { /* ignore */ }
+  }
+  if (bleDevice && bleDevice.gatt.connected) {
+    bleDevice.gatt.disconnect();
+  }
+  setDisconnectedUI();
+}
+
+connectBtn.addEventListener("click", connectToSensor);
+disconnectBtn.addEventListener("click", disconnectFromSensor);
+
+setDisconnectedUI();
+</script>
+
+</body>
+</html>
